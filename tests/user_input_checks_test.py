@@ -32,7 +32,7 @@ from sbi.utils.user_input_checks import (
     process_prior,
     process_simulator,
     process_x,
-    validate_theta_and_x
+    validate_theta_and_x,
 )
 from sbi.utils.user_input_checks_utils import (
     CustomPytorchWrapper,
@@ -438,45 +438,35 @@ def test_passing_custom_density_estimator(arg):
     _ = SNPE_C(prior=prior, density_estimator=density_estimator)
 
 
-def test_validate_theta_and_x_cpu():
+@pytest.mark.parametrize("device", ("cpu", "cuda:0"))
+def test_validate_theta_and_x(device):
+    """Test for the correct location and type of theta given the device."""
 
-    cpu_device = torch.device('cpu')
+    if device == "cuda:0" and not torch.cuda.is_available():
+        pass
+    else:
+        floattensor_type = (
+            torch.FloatTensor if device == "cpu" else torch.cuda.FloatTensor
+        )
 
-    theta = torch.ones((32,8), dtype=torch.float32).to(cpu_device)
-    x = torch.zeros((32,100), dtype=torch.float32).to(cpu_device)
-    otheta = torch.FloatTensor((32,8)) #using an explicit type
+        theta = torch.ones((32, 8), dtype=torch.float32).to(device)
+        x = torch.zeros((32, 100), dtype=torch.float32).to(device)
+        otheta = torch.FloatTensor((32, 8))  # using an explicit type
 
-    # Check assumptions in implementation:
-    # A cpu based torch.tensor is an instance of torch.FloatTensor,
-    # both of torch.FloatTensor and torch.tensor expose dtype==float32.
-    assert isinstance(theta, torch.Tensor), "theta must be torch.Tensor."
-    assert theta.dtype == torch.float32, "theta must be of type torch.float32"
-    assert isinstance(theta, torch.FloatTensor)
-    assert otheta.dtype == torch.float32
+        # Check assumptions in implementation:
+        # A cpu based torch.tensor is an instance of torch.FloatTensor,
+        # both of torch.FloatTensor and torch.tensor expose dtype==float32.
+        assert isinstance(theta, torch.Tensor), "theta must be torch.Tensor."
+        assert theta.dtype == torch.float32, "theta must be of type torch.float32"
+        assert isinstance(
+            theta, floattensor_type
+        ), f"""theta must be of type {floattensor_type} to match the current device:
+        {device}."""
+        assert otheta.dtype == torch.float32
 
-    # test on cpu
-    validate_theta_and_x(theta, x)
+        # Actual test.
+        validate_theta_and_x(theta, x)
 
-    with pytest.raises(AssertionError) as exc:
-        validate_theta_and_x(theta, x.to(torch.float64))
-
-
-@pytest.mark.gpu
-def test_validate_theta_and_x_gpu():
-
-    gpu_if_present = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
-    theta = torch.ones((32,8), dtype=torch.float32).to(gpu_if_present)
-    x = torch.zeros((32,100), dtype=torch.float32).to(gpu_if_present)
-
-    # A gpu based torch.tensor is NOT an instance of torch.FloatTensor,
-    # but rather of torch.cuda.FloatTensor, still
-    # tensor.dtype returns torch.float32.
-    assert isinstance(theta, torch.Tensor)
-    assert theta.dtype == torch.float32
-    assert not isinstance(theta, torch.FloatTensor)
-
-    validate_theta_and_x(theta, x)
-
-    with pytest.raises(AssertionError) as exc:
-        validate_theta_and_x(theta, x.to(torch.float64))
+        # Test failure mode.
+        with pytest.raises(AssertionError) as exc:
+            validate_theta_and_x(theta, x.to(torch.float64))
